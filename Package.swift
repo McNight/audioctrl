@@ -18,5 +18,13 @@ let package = Package(
                 .linkedFramework("CoreAudio"),
             ]
         ),
+        .testTarget(
+            name: "audioctrlTests",
+            dependencies: ["audioctrl"],
+            path: "Tests/audioctrlTests",
+            linkerSettings: [
+                .linkedFramework("CoreAudio"),
+            ]
+        ),
     ]
 )
