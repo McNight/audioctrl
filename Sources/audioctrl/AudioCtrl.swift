@@ -2,6 +2,25 @@ import ArgumentParser
 import CoreAudio
 import Foundation
 
+// MARK: - Sort key for list
+
+enum SortKey: String, CaseIterable, ExpressibleByArgument {
+    case transport, id, name, rate
+
+    init?(argument: String) { self.init(rawValue: argument.lowercased()) }
+}
+
+// MARK: - Device resolution helper (shared by get/set)
+
+private func resolveDeviceFlag(name: String?, id: UInt32?) throws -> AudioObjectID {
+    switch (name, id) {
+    case (let n?, nil): return try findDeviceByName(n)
+    case (nil, let i?): return try findDeviceByID(AudioObjectID(i))
+    case (nil, nil):    preconditionFailure("Called without a flag set")
+    default:            throw ValidationError("Use only one of --name or --id.")
+    }
+}
+
 // MARK: - Property data type
 
 enum PropType: String, CaseIterable, ExpressibleByArgument {
@@ -162,8 +181,28 @@ extension AudioCtrl {
         @Flag(name: .shortAndLong, help: "Also print device UIDs.")
         var verbose = false
 
+        @Option(name: .shortAndLong, help: "Sort by: transport (default), id, name, rate.")
+        var sort: SortKey = .transport
+
         mutating func run() throws {
-            let devices = try getAllDeviceIDs()
+            let raw = try getAllDeviceIDs()
+
+            let devices: [AudioObjectID]
+            switch sort {
+            case .transport:
+                devices = raw.sorted {
+                    let ta = (try? getScalar($0, addr(kAudioDevicePropertyTransportType)) as UInt32) ?? 0
+                    let tb = (try? getScalar($1, addr(kAudioDevicePropertyTransportType)) as UInt32) ?? 0
+                    let oa = transportSortOrder(ta), ob = transportSortOrder(tb)
+                    return oa != ob ? oa < ob : deviceName($0) < deviceName($1)
+                }
+            case .id:
+                devices = raw.sorted()
+            case .name:
+                devices = raw.sorted { deviceName($0) < deviceName($1) }
+            case .rate:
+                devices = raw.sorted { (getSampleRate($0) ?? 0) < (getSampleRate($1) ?? 0) }
+            }
 
             print("\(rjust("ID", 6))  \(ljust("Name", 32))  \(rjust("Rate", 7))  \(rjust("In", 3))  \(rjust("Out", 3))  Transport")
             print(String(repeating: "-", count: 70))
@@ -193,17 +232,28 @@ extension AudioCtrl {
             commandName: "get",
             abstract: "Get a property value from a device.",
             discussion: """
+            Device selection (pick one):
+              <device> <property>          positional: name substring, UID, or numeric ID
+              --id <n> <property>          select device by numeric object ID
+              --name <pattern> <property>  select device by name substring or UID
+
             PROPERTY is a known name (see `audioctrl props`) or a raw CoreAudio selector:
             a 4-char code (e.g. msrt), hex (e.g. 0x6D737274), or decimal.
             --type is required when using a raw selector.
             """
         )
 
-        @Argument(help: "Device name (substring), UID, or numeric object ID.")
-        var device: String
+        @Argument(help: ArgumentHelp(
+            "Positional args: <device> <property>  — or just <property> when --id/--name is given.",
+            valueName: "args"
+        ))
+        var positionals: [String] = []
 
-        @Argument(help: "Property name or raw selector.")
-        var property: String
+        @Option(name: [.customShort("n"), .long], help: "Select device by name (substring or UID).")
+        var name: String?
+
+        @Option(name: [.customShort("i"), .long], help: "Select device by numeric object ID.")
+        var id: UInt32?
 
         @Option(name: .shortAndLong, help: "Value type for raw selectors: float32, float64, uint32, string.")
         var type: PropType?
@@ -215,7 +265,23 @@ extension AudioCtrl {
         var element: UInt32 = 0
 
         mutating func run() throws {
-            let deviceID = try findDevice(matching: device)
+            let hasFlagDevice = name != nil || id != nil
+            let deviceID: AudioObjectID
+            let property: String
+
+            if hasFlagDevice {
+                guard positionals.count == 1 else {
+                    throw ValidationError("Expected exactly <property> when using --name or --id.")
+                }
+                deviceID = try resolveDeviceFlag(name: name, id: id)
+                property = positionals[0]
+            } else {
+                guard positionals.count == 2 else {
+                    throw ValidationError("Expected <device> <property>. Use --id or --name to select by flag.")
+                }
+                deviceID = try findDevice(matching: positionals[0])
+                property = positionals[1]
+            }
 
             if let known = knownProps.first(where: { $0.name == property }) {
                 let targetID = try resolveTarget(known, deviceID: deviceID)
@@ -240,19 +306,27 @@ extension AudioCtrl {
             commandName: "set",
             abstract: "Set a property value on a device.",
             discussion: """
+            Device selection (pick one):
+              <device> <property> <value>          positional: name substring, UID, or numeric ID
+              --id <n> <property> <value>          select device by numeric object ID
+              --name <pattern> <property> <value>  select device by name substring or UID
+
             PROPERTY is a known name (see `audioctrl props`) or a raw CoreAudio selector.
             --type is required when using a raw selector.
             """
         )
 
-        @Argument(help: "Device name (substring), UID, or numeric object ID.")
-        var device: String
+        @Argument(help: ArgumentHelp(
+            "Positional args: <device> <property> <value>  — or <property> <value> when --id/--name is given.",
+            valueName: "args"
+        ))
+        var positionals: [String] = []
 
-        @Argument(help: "Property name or raw selector.")
-        var property: String
+        @Option(name: [.customShort("n"), .long], help: "Select device by name (substring or UID).")
+        var name: String?
 
-        @Argument(help: "New value.")
-        var value: String
+        @Option(name: [.customShort("i"), .long], help: "Select device by numeric object ID.")
+        var id: UInt32?
 
         @Option(name: .shortAndLong, help: "Value type for raw selectors: float32, float64, uint32, string.")
         var type: PropType?
@@ -264,7 +338,26 @@ extension AudioCtrl {
         var element: UInt32 = 0
 
         mutating func run() throws {
-            let deviceID = try findDevice(matching: device)
+            let hasFlagDevice = name != nil || id != nil
+            let deviceID: AudioObjectID
+            let property: String
+            let value: String
+
+            if hasFlagDevice {
+                guard positionals.count == 2 else {
+                    throw ValidationError("Expected <property> <value> when using --name or --id.")
+                }
+                deviceID = try resolveDeviceFlag(name: name, id: id)
+                property = positionals[0]
+                value    = positionals[1]
+            } else {
+                guard positionals.count == 3 else {
+                    throw ValidationError("Expected <device> <property> <value>. Use --id or --name to select by flag.")
+                }
+                deviceID = try findDevice(matching: positionals[0])
+                property = positionals[1]
+                value    = positionals[2]
+            }
 
             if let known = knownProps.first(where: { $0.name == property }) {
                 guard known.settable else { throw AudioCtrlError.notSettable(property) }

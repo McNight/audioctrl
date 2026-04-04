@@ -174,6 +174,36 @@ func findDevice(matching input: String) throws -> AudioObjectID {
     }
 }
 
+func findDeviceByName(_ input: String) throws -> AudioObjectID {
+    let devices = try getAllDeviceIDs()
+    // Exact UID match.
+    if let match = devices.first(where: { deviceUID($0) == input }) { return match }
+    // Case-insensitive name substring (no numeric fallback).
+    let hits = devices.filter { deviceName($0).localizedCaseInsensitiveContains(input) }
+    switch hits.count {
+    case 0: throw AudioCtrlError.deviceNotFound(input)
+    case 1: return hits[0]
+    default:
+        let names = hits.map { "\(deviceName($0)) (id:\($0))" }.joined(separator: ", ")
+        throw AudioCtrlError.ambiguousDevice(input, names)
+    }
+}
+
+func findDeviceByID(_ id: AudioObjectID) throws -> AudioObjectID {
+    let devices = try getAllDeviceIDs()
+    guard devices.contains(id) else { throw AudioCtrlError.deviceNotFound(String(id)) }
+    return id
+}
+
+func transportSortOrder(_ t: UInt32) -> Int {
+    switch t {
+    case kAudioDeviceTransportTypeBuiltIn:   return 0
+    case kAudioDeviceTransportTypeVirtual:   return 1
+    case kAudioDeviceTransportTypeAggregate: return 2
+    default:                                  return 3
+    }
+}
+
 // MARK: - Formatting helpers
 
 func transportTypeName(_ t: UInt32) -> String {
