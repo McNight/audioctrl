@@ -17,7 +17,7 @@ $ audioctrl list
 
 ## Requirements
 
-- macOS 13 or later
+- macOS 12 (Monterey) or later
 - Swift 5.9+
 
 ## Installation
