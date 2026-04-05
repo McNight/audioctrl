@@ -248,23 +248,35 @@ func addr(
 // MARK: - Transport type
 
 func transportSortOrder(_ t: UInt32) -> Int {
+    if #available(macOS 13.0, *) {
+        switch t {
+        case kAudioDeviceTransportTypeContinuityCaptureWired,
+             kAudioDeviceTransportTypeContinuityCaptureWireless: return 1
+        default: break
+        }
+    }
     switch t {
-    case kAudioDeviceTransportTypeBuiltIn:                return 0
+    case kAudioDeviceTransportTypeBuiltIn:     return 0
     case kAudioDeviceTransportTypeBluetooth,
-         kAudioDeviceTransportTypeBluetoothLE,
-         kAudioDeviceTransportTypeContinuityCaptureWired,
-         kAudioDeviceTransportTypeContinuityCaptureWireless: return 1
-    case kAudioDeviceTransportTypeUSB:                    return 2
+         kAudioDeviceTransportTypeBluetoothLE: return 1
+    case kAudioDeviceTransportTypeUSB:         return 2
     case kAudioDeviceTransportTypeHDMI,
          kAudioDeviceTransportTypeDisplayPort,
-         kAudioDeviceTransportTypeThunderbolt:            return 3
-    case kAudioDeviceTransportTypeVirtual:                return 4
-    case kAudioDeviceTransportTypeAggregate:              return 5
-    default:                                              return 6
+         kAudioDeviceTransportTypeThunderbolt: return 3
+    case kAudioDeviceTransportTypeVirtual:     return 4
+    case kAudioDeviceTransportTypeAggregate:   return 5
+    default:                                   return 6
     }
 }
 
 func transportTypeName(_ t: UInt32) -> String {
+    if #available(macOS 13.0, *) {
+        switch t {
+        case kAudioDeviceTransportTypeContinuityCaptureWired:    return "Continuity (Wired)"
+        case kAudioDeviceTransportTypeContinuityCaptureWireless: return "Continuity (Wireless)"
+        default: break
+        }
+    }
     switch t {
     case kAudioDeviceTransportTypeBuiltIn:     return "Built-in"
     case kAudioDeviceTransportTypeAggregate:   return "Aggregate"
@@ -278,9 +290,7 @@ func transportTypeName(_ t: UInt32) -> String {
     case kAudioDeviceTransportTypeDisplayPort: return "DisplayPort"
     case kAudioDeviceTransportTypeAirPlay:     return "AirPlay"
     case kAudioDeviceTransportTypeAVB:         return "AVB"
-    case kAudioDeviceTransportTypeThunderbolt:              return "Thunderbolt"
-    case kAudioDeviceTransportTypeContinuityCaptureWired:   return "Continuity (Wired)"
-    case kAudioDeviceTransportTypeContinuityCaptureWireless: return "Continuity (Wireless)"
+    case kAudioDeviceTransportTypeThunderbolt: return "Thunderbolt"
     default: return String(format: "0x%08X", t)
     }
 }
