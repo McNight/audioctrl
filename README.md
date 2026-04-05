@@ -22,6 +22,15 @@ $ audioctrl list
 
 ## Installation
 
+### Homebrew (recommended)
+
+```sh
+brew tap McNight/tap
+brew install audioctrl
+```
+
+### Build from source
+
 ```sh
 git clone https://github.com/your-username/audioctrl.git
 cd audioctrl
